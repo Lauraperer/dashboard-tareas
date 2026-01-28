@@ -18,7 +18,8 @@ type TaskRow = {
   client_id: string | null;
 };
 
-const PUBLIC_USER_ID = "public";
+// UUID fijo "público" (válido para columnas uuid)
+const PUBLIC_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 function formatToday() {
   const d = new Date();
@@ -121,6 +122,7 @@ export default function DashboardPage() {
 
     setMsg(null);
     const { error } = await supabase.from("clients").insert({
+      // si pones esto o no, da igual si pusiste DEFAULT en SQL
       user_id: PUBLIC_USER_ID,
       name,
     });
@@ -190,7 +192,6 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <main className="mx-auto max-w-6xl px-6 py-10">
-        {/* HEADER */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
@@ -211,9 +212,7 @@ export default function DashboardPage() {
             </div>
             <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 shadow-sm">
               Vencidas:{" "}
-              <span
-                className={`font-semibold ${overdueCount > 0 ? "text-red-600" : ""}`}
-              >
+              <span className={`font-semibold ${overdueCount > 0 ? "text-red-600" : ""}`}>
                 {overdueCount}
               </span>
             </div>
@@ -226,9 +225,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* GRID */}
         <div className="mt-8 grid gap-6 lg:grid-cols-5">
-          {/* CLIENTES */}
           <Card className="lg:col-span-2 border-slate-200/70 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">Clientes</CardTitle>
@@ -267,20 +264,17 @@ export default function DashboardPage() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                 <div className="font-semibold">Tip</div>
                 <div className="mt-1 opacity-90">
-                  Crea “Let’s Talent”, “LIPASAM”, “Emocional”, “Autónoma”, “Jecama”,
-                  “LauraSonia”, “Familia”.
+                  Crea “Let’s Talent”, “LIPASAM”, “Emocional”, “Autónoma”, “Jecama”, “LauraSonia”, “Familia”.
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* TAREAS */}
           <Card className="lg:col-span-3 border-slate-200/70 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">Tareas</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              {/* FORM */}
               <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="grid gap-3 md:grid-cols-4">
                   <Input
@@ -331,7 +325,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* LIST */}
               {tasks.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
                   <div className="text-lg font-semibold text-slate-800">
@@ -349,11 +342,8 @@ export default function DashboardPage() {
                       <div
                         key={t.id}
                         className={[
-                          "rounded-2xl border bg-white p-4 shadow-sm transition",
-                          "hover:shadow-md",
-                          overdue
-                            ? "border-red-200 bg-red-50/40"
-                            : "border-slate-200",
+                          "rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md",
+                          overdue ? "border-red-200 bg-red-50/40" : "border-slate-200",
                         ].join(" ")}
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -362,9 +352,7 @@ export default function DashboardPage() {
                               <h3
                                 className={[
                                   "truncate text-base font-bold text-slate-900",
-                                  t.status === "done"
-                                    ? "line-through opacity-60"
-                                    : "",
+                                  t.status === "done" ? "line-through opacity-60" : "",
                                 ].join(" ")}
                                 title={t.title}
                               >
@@ -390,21 +378,16 @@ export default function DashboardPage() {
                             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
                               {t.due_date && (
                                 <span>
-                                  📅 <span className="font-medium">Vence:</span>{" "}
-                                  {t.due_date}
+                                  📅 <span className="font-medium">Vence:</span> {t.due_date}
                                 </span>
                               )}
                               {t.estimated_minutes != null && (
                                 <span>
-                                  ⏱{" "}
-                                  <span className="font-medium">
-                                    {t.estimated_minutes} min
-                                  </span>
+                                  ⏱ <span className="font-medium">{t.estimated_minutes} min</span>
                                 </span>
                               )}
                               <span>
-                                ✅ <span className="font-medium">Estado:</span>{" "}
-                                {t.status}
+                                ✅ <span className="font-medium">Estado:</span> {t.status}
                               </span>
 
                               {t.link && (
