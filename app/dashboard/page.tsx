@@ -18,6 +18,8 @@ type TaskRow = {
   client_id: string | null;
 };
 
+const PUBLIC_USER_ID = "public";
+
 function formatToday() {
   const d = new Date();
   return d.toLocaleDateString("es-ES", {
@@ -43,7 +45,6 @@ function priorityLabel(p: number) {
 }
 
 function priorityPillClass(p: number) {
-  // no dependemos de colores del theme; Tailwind estándar
   if (p === 1) return "bg-red-100 text-red-800 border-red-200";
   if (p === 2) return "bg-amber-100 text-amber-800 border-amber-200";
   return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -51,11 +52,9 @@ function priorityPillClass(p: number) {
 
 export default function DashboardPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
-  const [userId, setUserId] = useState<string | null>(null);
 
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("ALL");
-
   const [tasks, setTasks] = useState<TaskRow[]>([]);
 
   const [newClientName, setNewClientName] = useState("");
@@ -67,20 +66,11 @@ export default function DashboardPage() {
 
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function loadUser() {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-    setUserId(data.user?.id ?? null);
-  }
-
-  async function loadClients(uid: string) {
+  async function loadClients() {
     const { data, error } = await supabase
       .from("clients")
       .select("id,name")
-      .eq("user_id", uid)
+      .eq("user_id", PUBLIC_USER_ID)
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -90,11 +80,11 @@ export default function DashboardPage() {
     setClients((data ?? []) as ClientRow[]);
   }
 
-  async function loadTasks(uid: string, clientId: string) {
+  async function loadTasks(clientId: string) {
     const q = supabase
       .from("tasks")
       .select("id,title,status,priority,due_date,estimated_minutes,link,client_id")
-      .eq("user_id", uid)
+      .eq("user_id", PUBLIC_USER_ID)
       .order("due_date", { ascending: true })
       .order("priority", { ascending: true });
 
@@ -110,37 +100,28 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
-      await loadUser();
+      setMsg(null);
+      await loadClients();
+      await loadTasks(selectedClientId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
     (async () => {
       setMsg(null);
-      await loadClients(userId);
+      await loadTasks(selectedClientId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      setMsg(null);
-      await loadTasks(userId, selectedClientId);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, selectedClientId]);
+  }, [selectedClientId]);
 
   async function addClient() {
-    if (!userId) return;
     const name = newClientName.trim();
     if (!name) return;
 
     setMsg(null);
     const { error } = await supabase.from("clients").insert({
-      user_id: userId,
+      user_id: PUBLIC_USER_ID,
       name,
     });
 
@@ -149,11 +130,10 @@ export default function DashboardPage() {
       return;
     }
     setNewClientName("");
-    await loadClients(userId);
+    await loadClients();
   }
 
   async function addTask() {
-    if (!userId) return;
     const title = newTaskTitle.trim();
     if (!title) return;
 
@@ -163,7 +143,7 @@ export default function DashboardPage() {
     const due = newTaskDue.trim() === "" ? null : newTaskDue;
 
     const { error } = await supabase.from("tasks").insert({
-      user_id: userId,
+      user_id: PUBLIC_USER_ID,
       client_id:
         selectedClientId && selectedClientId !== "ALL" ? selectedClientId : null,
       title,
@@ -184,11 +164,10 @@ export default function DashboardPage() {
     setNewTaskMinutes("");
     setNewTaskLink("");
 
-    await loadTasks(userId, selectedClientId);
+    await loadTasks(selectedClientId);
   }
 
   async function toggleDone(task: TaskRow) {
-    if (!userId) return;
     const nextStatus = task.status === "done" ? "pending" : "done";
 
     setMsg(null);
@@ -196,42 +175,17 @@ export default function DashboardPage() {
       .from("tasks")
       .update({ status: nextStatus })
       .eq("id", task.id)
-      .eq("user_id", userId);
+      .eq("user_id", PUBLIC_USER_ID);
 
     if (error) {
       setMsg(error.message);
       return;
     }
-    await loadTasks(userId, selectedClientId);
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = "/auth/login";
+    await loadTasks(selectedClientId);
   }
 
   const pendingCount = tasks.filter((t) => t.status !== "done").length;
   const overdueCount = tasks.filter((t) => isOverdue(t.due_date, t.status)).length;
-
-  if (!userId) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <main className="mx-auto max-w-5xl px-6 py-10">
-          <Card className="border-slate-200/70 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-xl">Dashboard</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-slate-700">
-                No estás logueada. Ve a <span className="font-semibold">/auth/login</span>.
-              </p>
-              {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
-            </CardContent>
-          </Card>
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -242,11 +196,12 @@ export default function DashboardPage() {
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
               Tu tablero
             </h1>
-            <p className="mt-2 text-slate-600">
-              {formatToday()}
-            </p>
+            <p className="mt-2 text-slate-600">{formatToday()}</p>
             <p className="mt-2 text-slate-600">
               Clientes → tareas con prioridad, fecha límite y tiempo estimado.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              (Modo público: cualquiera con el enlace puede entrar)
             </p>
           </div>
 
@@ -256,14 +211,12 @@ export default function DashboardPage() {
             </div>
             <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 shadow-sm">
               Vencidas:{" "}
-              <span className={`font-semibold ${overdueCount > 0 ? "text-red-600" : ""}`}>
+              <span
+                className={`font-semibold ${overdueCount > 0 ? "text-red-600" : ""}`}
+              >
                 {overdueCount}
               </span>
             </div>
-
-            <Button variant="outline" onClick={logout}>
-              Cerrar sesión
-            </Button>
           </div>
         </div>
 
@@ -314,7 +267,8 @@ export default function DashboardPage() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                 <div className="font-semibold">Tip</div>
                 <div className="mt-1 opacity-90">
-                  Crea “Let’s Talent”, “LIPASAM”, “Emocional”, “Autónoma”, “Jecama”, “LauraSonia”, “Familia”.
+                  Crea “Let’s Talent”, “LIPASAM”, “Emocional”, “Autónoma”, “Jecama”,
+                  “LauraSonia”, “Familia”.
                 </div>
               </div>
             </CardContent>
@@ -397,7 +351,9 @@ export default function DashboardPage() {
                         className={[
                           "rounded-2xl border bg-white p-4 shadow-sm transition",
                           "hover:shadow-md",
-                          overdue ? "border-red-200 bg-red-50/40" : "border-slate-200",
+                          overdue
+                            ? "border-red-200 bg-red-50/40"
+                            : "border-slate-200",
                         ].join(" ")}
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -406,7 +362,9 @@ export default function DashboardPage() {
                               <h3
                                 className={[
                                   "truncate text-base font-bold text-slate-900",
-                                  t.status === "done" ? "line-through opacity-60" : "",
+                                  t.status === "done"
+                                    ? "line-through opacity-60"
+                                    : "",
                                 ].join(" ")}
                                 title={t.title}
                               >
@@ -438,7 +396,8 @@ export default function DashboardPage() {
                               )}
                               {t.estimated_minutes != null && (
                                 <span>
-                                  ⏱ <span className="font-medium">
+                                  ⏱{" "}
+                                  <span className="font-medium">
                                     {t.estimated_minutes} min
                                   </span>
                                 </span>
