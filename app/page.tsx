@@ -1,22 +1,8 @@
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
-import { Suspense } from "react"
-
-async function HomeContent() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (user) {
-    redirect("/dashboard")
-  } else {
-    redirect("/auth/login")
-  }
-}
-
-export default function Home() {
+export default function Page() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <HomeContent />
-    </Suspense>
-  )
+    <main style={{ padding: 24 }}>
+      <h1>Dashboard de tareas</h1>
+      <p>Si ves esto, Vercel ya funciona ✅</p>
+    </main>
+  );
 }
