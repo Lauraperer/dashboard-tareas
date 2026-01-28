@@ -1,30 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
   async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setMessage(null);
+  e.preventDefault();
+  setMessage(null);
+  setLoading(true);
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      setMessage(
-        "Error de configuración: faltan las variables de Supabase en Vercel."
-      );
-      return;
-    }
+  const supabase = supabaseBrowser();
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
 
-    setLoading(true);
+  if (error) {
+    setMessage(error.message);
+  } else {
+    setMessage("Te hemos enviado el enlace de acceso.");
+  }
+
+  setLoading(false);
+}
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
