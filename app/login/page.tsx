@@ -16,11 +16,12 @@ export default function LoginPage() {
     const supabase = supabaseBrowser();
 
     const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/confirm`,
-      },
-    });
+  email,
+  options: {
+    emailRedirectTo:
+      "https://dashboard-tareas-jwkildnwo-lauras-projects-b4d96bb2.vercel.app/auth/confirm",
+  },
+});
 
     if (error) {
       setMessage(error.message);
