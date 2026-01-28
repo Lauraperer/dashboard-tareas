@@ -3,18 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-
 type ClientRow = { id: string; name: string };
-
 type TaskRow = {
   id: string;
   title: string;
@@ -26,50 +15,12 @@ type TaskRow = {
   client_id: string | null;
 };
 
-function priorityLabel(p: number) {
-  if (p === 1) return "Alta";
-  if (p === 2) return "Media";
-  return "Baja";
-}
-
-function statusLabel(s: string) {
-  if (s === "pending") return "Pendiente";
-  if (s === "doing") return "En curso";
-  if (s === "done") return "Hecha";
-  return s;
-}
-
-function isOverdue(due: string | null, status: string) {
-  if (!due) return false;
-  if (status === "done") return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const dueDate = new Date(due + "T00:00:00");
-  return dueDate < today;
-}
-
-function formatDue(due: string | null) {
-  if (!due) return "—";
-  try {
-    const d = new Date(due + "T00:00:00");
-    return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" });
-  } catch {
-    return due;
-  }
-}
-
 export default function DashboardPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
 
-  const [userId, setUserId] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-
   const [clients, setClients] = useState<ClientRow[]>([]);
-  const [tasks, setTasks] = useState<TaskRow[]>([]);
-
   const [selectedClientId, setSelectedClientId] = useState<string>("ALL");
-  const [filterStatus, setFilterStatus] = useState<string>("ALL");
-  const [sortBy, setSortBy] = useState<string>("due"); // due | priority | created
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
 
   const [newClientName, setNewClientName] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -77,22 +28,13 @@ export default function DashboardPage() {
   const [newTaskMinutes, setNewTaskMinutes] = useState<string>("");
   const [newTaskPriority, setNewTaskPriority] = useState<number>(2);
   const [newTaskLink, setNewTaskLink] = useState("");
-  const [newTaskStatus, setNewTaskStatus] = useState<"pending" | "doing" | "done">("pending");
 
-  async function loadUser() {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-    setUserId(data.user?.id ?? null);
-  }
+  const [msg, setMsg] = useState<string | null>(null);
 
-  async function loadClients(uid: string) {
+  async function loadClients() {
     const { data, error } = await supabase
       .from("clients")
       .select("id,name")
-      .eq("user_id", uid)
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -102,25 +44,15 @@ export default function DashboardPage() {
     setClients((data ?? []) as ClientRow[]);
   }
 
-  async function loadTasks(uid: string) {
-    let q = supabase
+  async function loadTasks(clientId: string) {
+    const q = supabase
       .from("tasks")
       .select("id,title,status,priority,due_date,estimated_minutes,link,client_id")
-      .eq("user_id", uid);
+      .order("due_date", { ascending: true })
+      .order("priority", { ascending: true });
 
-    if (selectedClientId !== "ALL") q = q.eq("client_id", selectedClientId);
-    if (filterStatus !== "ALL") q = q.eq("status", filterStatus);
-
-    if (sortBy === "priority") {
-      q = q.order("priority", { ascending: true }).order("due_date", { ascending: true, nullsFirst: false });
-    } else if (sortBy === "due") {
-      q = q.order("due_date", { ascending: true, nullsFirst: false }).order("priority", { ascending: true });
-    } else {
-      // created (si no tienes created_at en tasks, no pasa nada: dejamos por due/priority)
-      q = q.order("due_date", { ascending: true, nullsFirst: false }).order("priority", { ascending: true });
-    }
-
-    const { data, error } = await q;
+    const { data, error } =
+      clientId && clientId !== "ALL" ? await q.eq("client_id", clientId) : await q;
 
     if (error) {
       setMsg(error.message);
@@ -131,51 +63,37 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
-      await loadUser();
+      setMsg(null);
+      await loadClients();
+      await loadTasks("ALL");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
     (async () => {
       setMsg(null);
-      await loadClients(userId);
-      await loadTasks(userId);
+      await loadTasks(selectedClientId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      setMsg(null);
-      await loadTasks(userId);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClientId, filterStatus, sortBy]);
+  }, [selectedClientId]);
 
   async function addClient() {
-    if (!userId) return;
     const name = newClientName.trim();
     if (!name) return;
 
     setMsg(null);
-    const { error } = await supabase.from("clients").insert({
-      user_id: userId,
-      name,
-    });
+    const { error } = await supabase.from("clients").insert({ name });
 
     if (error) {
       setMsg(error.message);
       return;
     }
     setNewClientName("");
-    await loadClients(userId);
+    await loadClients();
   }
 
   async function addTask() {
-    if (!userId) return;
     const title = newTaskTitle.trim();
     if (!title) return;
 
@@ -183,19 +101,16 @@ export default function DashboardPage() {
 
     const minutes =
       newTaskMinutes.trim() === "" ? null : Math.max(1, Number(newTaskMinutes));
-
-    const due = newTaskDue.trim() === "" ? null : newTaskDue.trim();
-    const link = newTaskLink.trim() === "" ? null : newTaskLink.trim();
+    const due = newTaskDue.trim() === "" ? null : newTaskDue;
 
     const { error } = await supabase.from("tasks").insert({
-      user_id: userId,
       client_id: selectedClientId !== "ALL" ? selectedClientId : null,
       title,
       due_date: due,
       estimated_minutes: minutes,
       priority: newTaskPriority,
-      link,
-      status: newTaskStatus,
+      link: newTaskLink.trim() || null,
+      status: "pending",
     });
 
     if (error) {
@@ -207,350 +122,201 @@ export default function DashboardPage() {
     setNewTaskDue("");
     setNewTaskMinutes("");
     setNewTaskLink("");
-    setNewTaskPriority(2);
-    setNewTaskStatus("pending");
 
-    await loadTasks(userId);
-  }
-
-  async function setStatus(taskId: string, status: string) {
-    if (!userId) return;
-    setMsg(null);
-
-    const { error } = await supabase
-      .from("tasks")
-      .update({ status })
-      .eq("id", taskId)
-      .eq("user_id", userId);
-
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-    await loadTasks(userId);
+    await loadTasks(selectedClientId);
   }
 
   async function toggleDone(task: TaskRow) {
-    const next = task.status === "done" ? "pending" : "done";
-    await setStatus(task.id, next);
-  }
+    const nextStatus = task.status === "done" ? "pending" : "done";
 
-  async function deleteTask(taskId: string) {
-    if (!userId) return;
     setMsg(null);
-
     const { error } = await supabase
       .from("tasks")
-      .delete()
-      .eq("id", taskId)
-      .eq("user_id", userId);
+      .update({ status: nextStatus })
+      .eq("id", task.id);
 
     if (error) {
       setMsg(error.message);
       return;
     }
-    await loadTasks(userId);
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = "/auth/login";
-  }
-
-  // resumen rápido
-  const overdueCount = tasks.filter((t) => isOverdue(t.due_date, t.status)).length;
-  const totalMinutes = tasks.reduce((acc, t) => acc + (t.estimated_minutes ?? 0), 0);
-
-  if (!userId) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="mt-2 text-sm text-muted-foreground">No estás logueada. Ve a /auth/login.</p>
-        {msg && <p className="mt-4 text-sm text-red-600">{msg}</p>}
-      </main>
-    );
+    await loadTasks(selectedClientId);
   }
 
   return (
-    <main className="mx-auto max-w-6xl p-6">
-      <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <main style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Tu tablero</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Clientes → tareas con prioridad, fecha límite, tiempo estimado y link.
+          <h1 style={{ fontSize: 26, fontWeight: 800 }}>Tu tablero</h1>
+          <p style={{ opacity: 0.75, marginTop: 6 }}>
+            Clientes → tareas con prioridad, fecha límite y tiempo estimado.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border px-3 py-1">
-              {tasks.length} tareas
-            </span>
-            <span className="rounded-full border px-3 py-1">
-              {overdueCount} vencidas
-            </span>
-            <span className="rounded-full border px-3 py-1">
-              {totalMinutes} min estimados
-            </span>
-          </div>
+          <p style={{ opacity: 0.7, marginTop: 6 }}>
+            (Modo público: cualquiera con el enlace puede entrar)
+          </p>
         </div>
-
-        <Button variant="outline" onClick={logout}>
-          Cerrar sesión
-        </Button>
       </header>
 
       {msg && (
-        <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {msg}
-        </div>
+        <p style={{ marginTop: 12, color: "crimson", whiteSpace: "pre-wrap" }}>{msg}</p>
       )}
 
-      <section className="mt-6 grid gap-4 md:grid-cols-3">
+      <section style={{ marginTop: 20, display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16 }}>
         {/* CLIENTES */}
-        <Card className="md:col-span-1">
-          <CardHeader>
-            <CardTitle>Clientes</CardTitle>
-            <CardDescription>Selecciona un cliente o crea uno nuevo.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Filtrar por cliente</label>
-              <select
-                value={selectedClientId}
-                onChange={(e) => setSelectedClientId(e.target.value)}
-                className="w-full rounded-md border px-3 py-2 text-sm"
-              >
-                <option value="ALL">Todos</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Tip: crea “Let’s Talent”, “LIPASAM”, “Emocional”, “Autónoma”, “Jecama”, “LauraSonia”, “Familia”.
-              </p>
-            </div>
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Clientes</h2>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Nuevo cliente</label>
-              <div className="flex gap-2">
-                <Input
-                  value={newClientName}
-                  onChange={(e) => setNewClientName(e.target.value)}
-                  placeholder="Ej: LIPASAM"
-                />
-                <Button onClick={addClient}>Añadir</Button>
-              </div>
-            </div>
+          <div style={{ marginTop: 10 }}>
+            <select
+              value={selectedClientId}
+              onChange={(e) => setSelectedClientId(e.target.value)}
+              style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+            >
+              <option value="ALL">Todos</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            <div className="space-y-2 border-t pt-4">
-              <label className="text-sm font-medium">Vista</label>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Estado</span>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                  >
-                    <option value="ALL">Todos</option>
-                    <option value="pending">Pendiente</option>
-                    <option value="doing">En curso</option>
-                    <option value="done">Hecha</option>
-                  </select>
-                </div>
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <input
+              value={newClientName}
+              onChange={(e) => setNewClientName(e.target.value)}
+              placeholder="Nuevo cliente..."
+              style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+            />
+            <button
+              onClick={addClient}
+              style={{
+                border: "1px solid #000",
+                borderRadius: 10,
+                padding: "10px 12px",
+                cursor: "pointer",
+              }}
+            >
+              Añadir
+            </button>
+          </div>
 
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Orden</span>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                  >
-                    <option value="due">Por fecha</option>
-                    <option value="priority">Por prioridad</option>
-                    <option value="created">Recientes</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <div style={{ marginTop: 14, opacity: 0.8, fontSize: 13 }}>
+            Tip: crea “Let’s Talent”, “LIPASAM”, “Emocional”, “Autónoma”, “Jecama”, “LauraSonia”, “Familia”.
+          </div>
+        </div>
 
         {/* TAREAS */}
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Tareas</CardTitle>
-            <CardDescription>Añade tareas rápidas (10 min) o largas (10h). El tiempo es en minutos.</CardDescription>
-          </CardHeader>
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700 }}>Tareas</h2>
 
-          <CardContent className="space-y-4">
-            {/* CREAR TAREA */}
-            <div className="grid gap-2 rounded-lg border p-3 md:grid-cols-4">
-              <div className="md:col-span-2">
-                <label className="text-xs text-muted-foreground">Tarea</label>
-                <Input
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  placeholder="Ej: Evaluaciones de maestros (LIPASAM)"
-                />
-              </div>
+          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8 }}>
+            <input
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              placeholder="Nueva tarea..."
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+            />
+            <input
+              type="date"
+              value={newTaskDue}
+              onChange={(e) => setNewTaskDue(e.target.value)}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+            />
+            <input
+              type="number"
+              min={1}
+              value={newTaskMinutes}
+              onChange={(e) => setNewTaskMinutes(e.target.value)}
+              placeholder="min"
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+            />
+            <select
+              value={newTaskPriority}
+              onChange={(e) => setNewTaskPriority(Number(e.target.value))}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+            >
+              <option value={1}>Alta</option>
+              <option value={2}>Media</option>
+              <option value={3}>Baja</option>
+            </select>
 
-              <div>
-                <label className="text-xs text-muted-foreground">Fecha límite</label>
-                <Input
-                  type="date"
-                  value={newTaskDue}
-                  onChange={(e) => setNewTaskDue(e.target.value)}
-                />
-              </div>
+            <input
+              value={newTaskLink}
+              onChange={(e) => setNewTaskLink(e.target.value)}
+              placeholder="link (Drive, doc...)"
+              style={{
+                gridColumn: "1 / span 3",
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ccc",
+              }}
+            />
+            <button
+              onClick={addTask}
+              style={{
+                border: "1px solid #000",
+                borderRadius: 10,
+                padding: "10px 12px",
+                cursor: "pointer",
+              }}
+            >
+              Añadir tarea
+            </button>
+          </div>
 
-              <div>
-                <label className="text-xs text-muted-foreground">Tiempo (min)</label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={newTaskMinutes}
-                  onChange={(e) => setNewTaskMinutes(e.target.value)}
-                  placeholder="60"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs text-muted-foreground">Link (Drive, doc…)</label>
-                <Input
-                  value={newTaskLink}
-                  onChange={(e) => setNewTaskLink(e.target.value)}
-                  placeholder="https://..."
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Prioridad</label>
-                <select
-                  value={newTaskPriority}
-                  onChange={(e) => setNewTaskPriority(Number(e.target.value))}
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                >
-                  <option value={1}>Alta</option>
-                  <option value={2}>Media</option>
-                  <option value={3}>Baja</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Estado</label>
-                <select
-                  value={newTaskStatus}
-                  onChange={(e) => setNewTaskStatus(e.target.value as any)}
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                >
-                  <option value="pending">Pendiente</option>
-                  <option value="doing">En curso</option>
-                  <option value="done">Hecha</option>
-                </select>
-              </div>
-
-              <div className="md:col-span-4 flex justify-end">
-                <Button onClick={addTask}>Añadir tarea</Button>
-              </div>
-            </div>
-
-            {/* LISTA */}
+          <div style={{ marginTop: 14 }}>
             {tasks.length === 0 ? (
-              <div className="rounded-lg border p-6 text-sm text-muted-foreground">
-                No hay tareas todavía.
-              </div>
+              <p style={{ opacity: 0.75 }}>No hay tareas todavía.</p>
             ) : (
-              <div className="grid gap-3">
-                {tasks.map((t) => {
-                  const overdue = isOverdue(t.due_date, t.status);
-                  return (
-                    <div
-                      key={t.id}
-                      className={[
-                        "rounded-lg border p-4",
-                        overdue ? "border-red-200 bg-red-50" : "",
-                      ].join(" ")}
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3
-                              className={[
-                                "font-semibold",
-                                t.status === "done" ? "line-through opacity-70" : "",
-                              ].join(" ")}
-                            >
-                              {t.title}
-                            </h3>
-
-                            <span className="rounded-full border px-2 py-0.5 text-xs">
-                              {priorityLabel(t.priority)}
-                            </span>
-
-                            <span className="rounded-full border px-2 py-0.5 text-xs">
-                              {statusLabel(t.status)}
-                            </span>
-
-                            {overdue && (
-                              <span className="rounded-full border border-red-300 bg-white px-2 py-0.5 text-xs text-red-700">
-                                Vencida
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <span>Vence: {formatDue(t.due_date)}</span>
-                            <span>⏱ {t.estimated_minutes ?? "—"} min</span>
-                            {t.link ? (
-                              <a
-                                className="underline underline-offset-4"
-                                href={t.link}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Abrir link
-                              </a>
-                            ) : (
-                              <span>Link: —</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 md:justify-end">
-                          <Button
-                            variant="outline"
-                            onClick={() => setStatus(t.id, "pending")}
-                          >
-                            Pendiente
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => setStatus(t.id, "doing")}
-                          >
-                            En curso
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => toggleDone(t)}
-                          >
-                            {t.status === "done" ? "Reabrir" : "Hecha"}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            onClick={() => deleteTask(t.id)}
-                          >
-                            Borrar
-                          </Button>
-                        </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {tasks.map((t) => (
+                  <div
+                    key={t.id}
+                    style={{
+                      border: "1px solid #eee",
+                      borderRadius: 12,
+                      padding: 12,
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, textDecoration: t.status === "done" ? "line-through" : "none" }}>
+                        {t.title}
+                      </div>
+                      <div style={{ marginTop: 6, fontSize: 13, opacity: 0.8, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                        <span>Prioridad: {t.priority === 1 ? "Alta" : t.priority === 2 ? "Media" : "Baja"}</span>
+                        {t.due_date && <span>Vence: {t.due_date}</span>}
+                        {t.estimated_minutes != null && <span>⏱ {t.estimated_minutes} min</span>}
+                        {t.link && (
+                          <a href={t.link} target="_blank" rel="noreferrer">
+                            Abrir link
+                          </a>
+                        )}
+                        <span>Estado: {t.status}</span>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <button
+                      onClick={() => toggleDone(t)}
+                      style={{
+                        border: "1px solid #000",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        cursor: "pointer",
+                        minWidth: 120,
+                      }}
+                    >
+                      {t.status === "done" ? "Reabrir" : "Hecha"}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
     </main>
   );
