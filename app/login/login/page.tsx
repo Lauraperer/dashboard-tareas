@@ -5,22 +5,24 @@ import { createClient } from "@supabase/supabase-js";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  async function sendMagicLink(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setMsg(null);
+    setMessage(null);
 
-    if (!supabaseUrl || !supabaseKey) {
-      setMsg("Faltan variables de Supabase en Vercel (URL o KEY).");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      setMessage(
+        "Error de configuración: faltan las variables de Supabase en Vercel."
+      );
       return;
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
@@ -31,21 +33,23 @@ export default function LoginPage() {
     });
     setLoading(false);
 
-    setMsg(
-      error
-        ? `Error: ${error.message}`
-        : "Te he enviado un email con un enlace para entrar (magic link)."
-    );
+    if (error) {
+      setMessage(`Error: ${error.message}`);
+    } else {
+      setMessage(
+        "Te hemos enviado un email con un enlace para acceder (magic link)."
+      );
+    }
   }
 
   return (
     <main style={{ maxWidth: 420, margin: "0 auto", padding: 24 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700 }}>Login</h1>
       <p style={{ marginTop: 8, opacity: 0.8 }}>
-        Escribe tu email y te enviamos un enlace de acceso.
+        Introduce tu email y te enviaremos un enlace de acceso.
       </p>
 
-      <form onSubmit={sendMagicLink} style={{ marginTop: 16 }}>
+      <form onSubmit={handleLogin} style={{ marginTop: 16 }}>
         <label style={{ display: "block", marginBottom: 8 }}>
           Email
           <input
@@ -80,7 +84,9 @@ export default function LoginPage() {
         </button>
       </form>
 
-      {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
+      {message && (
+        <p style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{message}</p>
+      )}
     </main>
   );
 }
