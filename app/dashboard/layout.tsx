@@ -1,14 +1,10 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
+import type { ReactNode } from "react";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <SidebarProvider>
-      <AppSidebar />
-      <main className="flex-1">
-        <SidebarTrigger />
-        {children}
-      </main>
-    </SidebarProvider>
-  )
+export const metadata = {
+  title: "Dashboard",
+};
+
+export default function DashboardLayout({ children }: { children: ReactNode }) {
+  // ✅ Layout público: NO comprobamos sesión, NO redirigimos.
+  return <>{children}</>;
 }
